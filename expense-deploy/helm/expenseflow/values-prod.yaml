@@ -3,6 +3,7 @@ namespace: expenseflow-prod
 backend:
   replicaCount: 2
   image:
+    repository: expenseflowprodacr.azurecr.io/expenseflow-backend
     tag: prod-latest
   resources:
     requests:
@@ -24,6 +25,7 @@ backend:
 frontend:
   replicaCount: 2
   image:
+    repository: expenseflowprodacr.azurecr.io/expenseflow-frontend
     tag: prod-latest
   resources:
     requests:

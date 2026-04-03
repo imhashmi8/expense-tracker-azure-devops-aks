@@ -3,6 +3,7 @@ namespace: expenseflow-dev
 backend:
   replicaCount: 1
   image:
+    repository: expenseflowdevacr.azurecr.io/expenseflow-backend
     tag: dev-latest
   resources:
     requests:
@@ -24,6 +25,7 @@ backend:
 frontend:
   replicaCount: 1
   image:
+    repository: expenseflowdevacr.azurecr.io/expenseflow-frontend
     tag: dev-latest
   resources:
     requests:
