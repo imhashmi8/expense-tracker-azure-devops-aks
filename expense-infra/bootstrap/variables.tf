@@ -15,10 +15,10 @@ variable "resource_group_name" {
   default     = "expenseflow-tfstate-rg"
 }
 
-variable "storage_account_name_prefix" {
-  description = "Prefix for the Terraform state storage account. Must be lowercase letters/numbers only."
+variable "storage_account_name" {
+  description = "Exact storage account name for Terraform state. Must be globally unique, lowercase, and 3-24 characters long."
   type        = string
-  default     = "expenseflowtf"
+  default     = "expenseflowtfstate01"
 }
 
 variable "container_name" {

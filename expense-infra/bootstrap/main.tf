@@ -1,13 +1,3 @@
-locals {
-  storage_account_name = substr("${var.storage_account_name_prefix}${random_string.suffix.result}", 0, 24)
-}
-
-resource "random_string" "suffix" {
-  length  = 4
-  upper   = false
-  special = false
-}
-
 resource "azurerm_resource_group" "tfstate" {
   name     = var.resource_group_name
   location = var.location
@@ -15,7 +5,7 @@ resource "azurerm_resource_group" "tfstate" {
 }
 
 resource "azurerm_storage_account" "tfstate" {
-  name                            = local.storage_account_name
+  name                            = var.storage_account_name
   resource_group_name             = azurerm_resource_group.tfstate.name
   location                        = azurerm_resource_group.tfstate.location
   account_tier                    = "Standard"
