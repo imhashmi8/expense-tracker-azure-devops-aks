@@ -1,4 +1,4 @@
-subscription_id      = "b24d608e-8b73-4c1e-9a9b-337db282feb7"
+subscription_id      = "$(subscription_id)"
 location             = "Central India"
 resource_group_name  = "expenseflow-tfstate-rg"
 storage_account_name = "expenseflowtfstate01"
