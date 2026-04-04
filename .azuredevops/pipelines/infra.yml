@@ -1,0 +1,139 @@
+trigger: none
+pr: none
+
+variables:
+  - name: azureServiceConnection
+    value: sc-expenseflow-azure
+
+pool:
+  name: Default
+  demands:
+    - Agent.Name -equals devops-self-hosted-agent
+
+stages:
+  - stage: PlanDev
+    displayName: Plan dev infrastructure
+    variables:
+      - group: expenseflow-dev
+    jobs:
+      - job: PlanDev
+        steps:
+          - checkout: self
+            fetchDepth: 0
+
+          - task: AzureCLI@2
+            displayName: Terraform dev plan
+            inputs:
+              azureSubscription: $(azureServiceConnection)
+              scriptType: bash
+              scriptLocation: inlineScript
+              workingDirectory: $(Build.SourcesDirectory)/expense-infra/envs/dev
+              inlineScript: |
+                set -euo pipefail
+
+                terraform version
+                terraform init -backend-config=backend.hcl -upgrade
+                terraform validate
+                terraform plan -out=tfplan
+
+          - publish: $(Build.SourcesDirectory)/expense-infra/envs/dev/tfplan
+            artifact: dev-tfplan
+            displayName: Publish dev tfplan
+
+  - stage: ApplyDev
+    displayName: Apply dev infrastructure
+    dependsOn: PlanDev
+    variables:
+      - group: expenseflow-dev
+    jobs:
+      - deployment: ApplyDev
+        displayName: Apply dev
+        environment: dev
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - checkout: self
+                  fetchDepth: 0
+
+                - download: current
+                  artifact: dev-tfplan
+
+                - task: AzureCLI@2
+                  displayName: Terraform dev apply
+                  inputs:
+                    azureSubscription: $(azureServiceConnection)
+                    scriptType: bash
+                    scriptLocation: inlineScript
+                    workingDirectory: $(Build.SourcesDirectory)/expense-infra/envs/dev
+                    inlineScript: |
+                      set -euo pipefail
+
+                      terraform version
+                      cp "$(Pipeline.Workspace)/dev-tfplan/tfplan" ./tfplan
+                      terraform init -backend-config=backend.hcl -upgrade
+                      terraform apply -auto-approve tfplan
+
+  - stage: PlanProd
+    displayName: Plan prod infrastructure
+    dependsOn: ApplyDev
+    variables:
+      - group: expenseflow-prod
+    jobs:
+      - job: PlanProd
+        steps:
+          - checkout: self
+            fetchDepth: 0
+
+          - task: AzureCLI@2
+            displayName: Terraform prod plan
+            inputs:
+              azureSubscription: $(azureServiceConnection)
+              scriptType: bash
+              scriptLocation: inlineScript
+              workingDirectory: $(Build.SourcesDirectory)/expense-infra/envs/prod
+              inlineScript: |
+                set -euo pipefail
+
+                terraform version
+                terraform init -backend-config=backend.hcl -upgrade
+                terraform validate
+                terraform plan -out=tfplan
+
+          - publish: $(Build.SourcesDirectory)/expense-infra/envs/prod/tfplan
+            artifact: prod-tfplan
+            displayName: Publish prod tfplan
+
+  - stage: ApplyProd
+    displayName: Apply prod infrastructure
+    dependsOn: PlanProd
+    variables:
+      - group: expenseflow-prod
+    jobs:
+      - deployment: ApplyProd
+        displayName: Apply prod
+        environment: prod
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - checkout: self
+                  fetchDepth: 0
+
+                - download: current
+                  artifact: prod-tfplan
+
+                - task: AzureCLI@2
+                  displayName: Terraform prod apply
+                  inputs:
+                    azureSubscription: $(azureServiceConnection)
+                    scriptType: bash
+                    scriptLocation: inlineScript
+                    workingDirectory: $(Build.SourcesDirectory)/expense-infra/envs/prod
+                    inlineScript: |
+                      set -euo pipefail
+
+                      terraform version
+                      cp "$(Pipeline.Workspace)/prod-tfplan/tfplan" ./tfplan
+                      terraform init -backend-config=backend.hcl -upgrade
+                      terraform apply -auto-approve tfplan
