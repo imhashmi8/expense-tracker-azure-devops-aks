@@ -2,7 +2,7 @@ locals {
   name_prefix       = lower(var.prefix)
   environment       = lower(var.environment)
   base_name         = "${local.name_prefix}-${local.environment}"
-  storage_name_base = substr(lower(regexreplace("${var.prefix}${var.environment}", "[^a-zA-Z0-9]", "")), 0, 10)
+  storage_name_base = substr(lower(replace("${var.prefix}${var.environment}", "/[^a-zA-Z0-9]/", "")), 0, 10)
   default_tags = merge(
     {
       environment = var.environment
