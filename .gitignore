@@ -8,7 +8,10 @@ __pycache__/
 *.tfstate.*
 *.tfplan
 .terraform/
+.terraform.lock.hcl
 crash.log
+backend.hcl
+terraform.tfvars
 expense-app/backend/uploads/
 expense-app/backend/.env
 expense-app/frontend/.next/
