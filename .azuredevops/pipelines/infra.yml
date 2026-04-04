@@ -53,6 +53,14 @@ stages:
                 set -euo pipefail
 
                 terraform version
+
+                cat > pipeline.auto.tfvars <<EOF
+                subscription_id = "$(subscription_id)"
+                tenant_id = "$(tenant_id)"
+                key_vault_admin_object_ids = ["$(key_vault_admin_object_id)"]
+                postgres_admin_password = "$(postgres_admin_password)"
+                EOF
+
                 terraform init -backend-config=backend.hcl -upgrade
                 terraform validate
                 terraform plan -out=tfplan
@@ -91,6 +99,14 @@ stages:
                       set -euo pipefail
 
                       terraform version
+
+                      cat > pipeline.auto.tfvars <<EOF
+                      subscription_id = "$(subscription_id)"
+                      tenant_id = "$(tenant_id)"
+                      key_vault_admin_object_ids = ["$(key_vault_admin_object_id)"]
+                      postgres_admin_password = "$(postgres_admin_password)"
+                      EOF
+
                       cp "$(Pipeline.Workspace)/dev-tfplan/tfplan" ./tfplan
                       terraform init -backend-config=backend.hcl -upgrade
                       terraform apply -auto-approve tfplan
@@ -117,6 +133,14 @@ stages:
                 set -euo pipefail
 
                 terraform version
+
+                cat > pipeline.auto.tfvars <<EOF
+                subscription_id = "$(subscription_id)"
+                tenant_id = "$(tenant_id)"
+                key_vault_admin_object_ids = ["$(key_vault_admin_object_id)"]
+                postgres_admin_password = "$(postgres_admin_password)"
+                EOF
+
                 terraform init -backend-config=backend.hcl -upgrade
                 terraform validate
                 terraform plan -out=tfplan
@@ -155,6 +179,14 @@ stages:
                       set -euo pipefail
 
                       terraform version
+
+                      cat > pipeline.auto.tfvars <<EOF
+                      subscription_id = "$(subscription_id)"
+                      tenant_id = "$(tenant_id)"
+                      key_vault_admin_object_ids = ["$(key_vault_admin_object_id)"]
+                      postgres_admin_password = "$(postgres_admin_password)"
+                      EOF
+
                       cp "$(Pipeline.Workspace)/prod-tfplan/tfplan" ./tfplan
                       terraform init -backend-config=backend.hcl -upgrade
                       terraform apply -auto-approve tfplan

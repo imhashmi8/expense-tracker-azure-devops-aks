@@ -54,6 +54,10 @@ stages:
 
                       terraform version
 
+                      cat > pipeline.auto.tfvars <<EOF
+                      subscription_id = "$(subscription_id)"
+                      EOF
+
                       terraform init -upgrade
                       terraform validate
                       terraform plan -out=tfplan
