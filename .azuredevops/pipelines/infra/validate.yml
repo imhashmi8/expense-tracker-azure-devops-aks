@@ -1,0 +1,114 @@
+trigger:
+  branches:
+    include:
+      - main
+pr:
+  branches:
+    include:
+      - main
+  paths:
+    include:
+      - expense-infra/*
+      - expense-infra/**
+      - expense-deploy/*
+      - expense-deploy/**
+      - expense-monitoring/*
+      - expense-monitoring/**
+      - .azuredevops/pipelines/infra/validate.yml
+
+pool:
+  name: Default
+  demands:
+    - Agent.Name -equals devops-self-hosted-agent
+
+stages:
+  - stage: ValidateTerraform
+    displayName: Validate Terraform
+    jobs:
+      - job: ValidateBootstrap
+        displayName: Validate bootstrap module
+        timeoutInMinutes: 10
+        steps:
+          - checkout: self
+            fetchDepth: 0
+
+          - bash: |
+              set -euo pipefail
+              terraform version
+              terraform -chdir=expense-infra/bootstrap init -backend=false
+              terraform -chdir=expense-infra/bootstrap validate
+            displayName: Init and validate bootstrap
+
+      - job: ValidateDev
+        displayName: Validate dev environment
+        timeoutInMinutes: 10
+        steps:
+          - checkout: self
+            fetchDepth: 0
+
+          - bash: |
+              set -euo pipefail
+              terraform -chdir=expense-infra/envs/dev init -backend=false
+              terraform -chdir=expense-infra/envs/dev validate
+            displayName: Init and validate dev
+
+      - job: ValidateProd
+        displayName: Validate prod environment
+        timeoutInMinutes: 10
+        steps:
+          - checkout: self
+            fetchDepth: 0
+
+          - bash: |
+              set -euo pipefail
+              terraform -chdir=expense-infra/envs/prod init -backend=false
+              terraform -chdir=expense-infra/envs/prod validate
+            displayName: Init and validate prod
+
+  - stage: ValidateHelm
+    displayName: Validate Helm chart
+    dependsOn: []
+    jobs:
+      - job: HelmLint
+        displayName: Lint and template Helm chart
+        timeoutInMinutes: 10
+        steps:
+          - checkout: self
+            fetchDepth: 0
+
+          - bash: helm lint expense-deploy/helm/expenseflow
+            displayName: Helm lint
+
+          - bash: |
+              set -euo pipefail
+              helm template expenseflow-dev expense-deploy/helm/expenseflow \
+                -f expense-deploy/helm/expenseflow/values.yaml \
+                -f expense-deploy/helm/expenseflow/values-dev.yaml > /dev/null
+            displayName: Template dev values
+
+          - bash: |
+              set -euo pipefail
+              helm template expenseflow-prod expense-deploy/helm/expenseflow \
+                -f expense-deploy/helm/expenseflow/values.yaml \
+                -f expense-deploy/helm/expenseflow/values-prod.yaml > /dev/null
+            displayName: Template prod values
+
+  - stage: ValidateMonitoring
+    displayName: Validate monitoring manifests
+    dependsOn: []
+    jobs:
+      - job: KubectlDryRun
+        displayName: Dry-run monitoring manifests
+        timeoutInMinutes: 10
+        steps:
+          - checkout: self
+            fetchDepth: 0
+
+          - bash: |
+              set -euo pipefail
+              kubectl version --client
+              for manifest in expense-monitoring/*.yaml; do
+                echo "Validating $manifest ..."
+                kubectl apply --dry-run=client -f "$manifest"
+              done
+            displayName: kubectl dry-run all monitoring manifests

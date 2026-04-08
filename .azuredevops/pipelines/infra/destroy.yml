@@ -1,0 +1,147 @@
+trigger: none
+
+pr: none
+
+variables:
+  - name: azureServiceConnection
+    value: sc-expenseflow-azure
+
+pool:
+  name: Default
+  demands:
+    - Agent.Name -equals devops-self-hosted-agent
+
+# Destroys all infrastructure in order: prod → dev → bootstrap
+# Requires manual approval at each environment gate.
+
+stages:
+  - stage: DestroyProd
+    displayName: Destroy prod infrastructure
+    variables:
+      - group: expenseflow-prod
+    jobs:
+      - deployment: DestroyProd
+        displayName: Terraform destroy prod
+        environment: prod
+        timeoutInMinutes: 30
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - checkout: self
+                  fetchDepth: 0
+
+                - task: AzureCLI@2
+                  displayName: Write pipeline tfvars
+                  inputs:
+                    azureSubscription: $(azureServiceConnection)
+                    scriptType: bash
+                    scriptLocation: inlineScript
+                    workingDirectory: $(Build.SourcesDirectory)/expense-infra/envs/prod
+                    inlineScript: |
+                      set -euo pipefail
+                      cat > pipeline.auto.tfvars <<EOF
+                      subscription_id               = "$(subscription_id)"
+                      tenant_id                     = "$(tenant_id)"
+                      key_vault_admin_object_ids    = ["$(key_vault_admin_object_id)"]
+                      postgres_admin_password       = "$(postgres_admin_password)"
+                      EOF
+
+                - task: AzureCLI@2
+                  displayName: Terraform destroy
+                  inputs:
+                    azureSubscription: $(azureServiceConnection)
+                    scriptType: bash
+                    scriptLocation: inlineScript
+                    workingDirectory: $(Build.SourcesDirectory)/expense-infra/envs/prod
+                    inlineScript: |
+                      set -euo pipefail
+                      terraform init -backend-config=backend.hcl -upgrade
+                      terraform destroy -auto-approve
+
+  - stage: DestroyDev
+    displayName: Destroy dev infrastructure
+    dependsOn: DestroyProd
+    variables:
+      - group: expenseflow-dev
+    jobs:
+      - deployment: DestroyDev
+        displayName: Terraform destroy dev
+        environment: dev
+        timeoutInMinutes: 30
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - checkout: self
+                  fetchDepth: 0
+
+                - task: AzureCLI@2
+                  displayName: Write pipeline tfvars
+                  inputs:
+                    azureSubscription: $(azureServiceConnection)
+                    scriptType: bash
+                    scriptLocation: inlineScript
+                    workingDirectory: $(Build.SourcesDirectory)/expense-infra/envs/dev
+                    inlineScript: |
+                      set -euo pipefail
+                      cat > pipeline.auto.tfvars <<EOF
+                      subscription_id               = "$(subscription_id)"
+                      tenant_id                     = "$(tenant_id)"
+                      key_vault_admin_object_ids    = ["$(key_vault_admin_object_id)"]
+                      postgres_admin_password       = "$(postgres_admin_password)"
+                      EOF
+
+                - task: AzureCLI@2
+                  displayName: Terraform destroy
+                  inputs:
+                    azureSubscription: $(azureServiceConnection)
+                    scriptType: bash
+                    scriptLocation: inlineScript
+                    workingDirectory: $(Build.SourcesDirectory)/expense-infra/envs/dev
+                    inlineScript: |
+                      set -euo pipefail
+                      terraform init -backend-config=backend.hcl -upgrade
+                      terraform destroy -auto-approve
+
+  - stage: DestroyBootstrap
+    displayName: Destroy bootstrap backend
+    dependsOn: DestroyDev
+    variables:
+      - group: expenseflow-bootstrap
+    jobs:
+      - deployment: DestroyBootstrap
+        displayName: Terraform destroy bootstrap
+        environment: bootstrap
+        timeoutInMinutes: 15
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - checkout: self
+                  fetchDepth: 0
+
+                - task: AzureCLI@2
+                  displayName: Write pipeline tfvars
+                  inputs:
+                    azureSubscription: $(azureServiceConnection)
+                    scriptType: bash
+                    scriptLocation: inlineScript
+                    workingDirectory: $(Build.SourcesDirectory)/expense-infra/bootstrap
+                    inlineScript: |
+                      set -euo pipefail
+                      cat > pipeline.auto.tfvars <<EOF
+                      subscription_id = "$(subscription_id)"
+                      EOF
+
+                - task: AzureCLI@2
+                  displayName: Terraform destroy
+                  inputs:
+                    azureSubscription: $(azureServiceConnection)
+                    scriptType: bash
+                    scriptLocation: inlineScript
+                    workingDirectory: $(Build.SourcesDirectory)/expense-infra/bootstrap
+                    inlineScript: |
+                      set -euo pipefail
+                      terraform init -upgrade
+                      terraform destroy -auto-approve

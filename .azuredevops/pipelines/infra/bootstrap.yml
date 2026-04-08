@@ -6,7 +6,7 @@ trigger:
     include:
       - expense-infra/bootstrap/*
       - expense-infra/bootstrap/**
-      - .azuredevops/pipelines/bootstrap.yml
+      - .azuredevops/pipelines/infra/bootstrap.yml
 
 pr:
   branches:
@@ -16,7 +16,7 @@ pr:
     include:
       - expense-infra/bootstrap/*
       - expense-infra/bootstrap/**
-      - .azuredevops/pipelines/bootstrap.yml
+      - .azuredevops/pipelines/infra/bootstrap.yml
 
 variables:
   - group: expenseflow-bootstrap
@@ -30,11 +30,12 @@ pool:
 
 stages:
   - stage: Bootstrap
-    displayName: Bootstrap tfstate backend
+    displayName: Bootstrap Terraform remote state
     jobs:
       - deployment: BootstrapApply
         displayName: Apply bootstrap
         environment: bootstrap
+        timeoutInMinutes: 15
         strategy:
           runOnce:
             deploy:
@@ -43,7 +44,7 @@ stages:
                   fetchDepth: 0
 
                 - task: AzureCLI@2
-                  displayName: Terraform bootstrap apply
+                  displayName: Write pipeline tfvars
                   inputs:
                     azureSubscription: $(azureServiceConnection)
                     scriptType: bash
@@ -51,14 +52,31 @@ stages:
                     workingDirectory: $(Build.SourcesDirectory)/expense-infra/bootstrap
                     inlineScript: |
                       set -euo pipefail
-
-                      terraform version
-
                       cat > pipeline.auto.tfvars <<EOF
                       subscription_id = "$(subscription_id)"
                       EOF
 
+                - task: AzureCLI@2
+                  displayName: Terraform init and validate
+                  inputs:
+                    azureSubscription: $(azureServiceConnection)
+                    scriptType: bash
+                    scriptLocation: inlineScript
+                    workingDirectory: $(Build.SourcesDirectory)/expense-infra/bootstrap
+                    inlineScript: |
+                      set -euo pipefail
+                      terraform version
                       terraform init -upgrade
                       terraform validate
+
+                - task: AzureCLI@2
+                  displayName: Terraform apply
+                  inputs:
+                    azureSubscription: $(azureServiceConnection)
+                    scriptType: bash
+                    scriptLocation: inlineScript
+                    workingDirectory: $(Build.SourcesDirectory)/expense-infra/bootstrap
+                    inlineScript: |
+                      set -euo pipefail
                       terraform plan -out=tfplan
                       terraform apply -auto-approve tfplan

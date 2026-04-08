@@ -1,0 +1,120 @@
+trigger: none
+
+pr: none
+
+variables:
+  - name: azureServiceConnection
+    value: sc-expenseflow-azure
+  - name: tfWorkingDir
+    value: $(Build.SourcesDirectory)/expense-infra/envs/prod
+
+pool:
+  name: Default
+  demands:
+    - Agent.Name -equals devops-self-hosted-agent
+
+stages:
+  - stage: PlanProd
+    displayName: Plan prod infrastructure
+    variables:
+      - group: expenseflow-prod
+    jobs:
+      - job: PlanProd
+        displayName: Terraform plan
+        timeoutInMinutes: 20
+        steps:
+          - checkout: self
+            fetchDepth: 0
+
+          - task: AzureCLI@2
+            displayName: Write pipeline tfvars
+            inputs:
+              azureSubscription: $(azureServiceConnection)
+              scriptType: bash
+              scriptLocation: inlineScript
+              workingDirectory: $(tfWorkingDir)
+              inlineScript: |
+                set -euo pipefail
+                cat > pipeline.auto.tfvars <<EOF
+                subscription_id               = "$(subscription_id)"
+                tenant_id                     = "$(tenant_id)"
+                key_vault_admin_object_ids    = ["$(key_vault_admin_object_id)"]
+                postgres_admin_password       = "$(postgres_admin_password)"
+                EOF
+
+          - task: AzureCLI@2
+            displayName: Terraform init and validate
+            inputs:
+              azureSubscription: $(azureServiceConnection)
+              scriptType: bash
+              scriptLocation: inlineScript
+              workingDirectory: $(tfWorkingDir)
+              inlineScript: |
+                set -euo pipefail
+                terraform version
+                terraform init -backend-config=backend.hcl -upgrade
+                terraform validate
+
+          - task: AzureCLI@2
+            displayName: Terraform plan
+            inputs:
+              azureSubscription: $(azureServiceConnection)
+              scriptType: bash
+              scriptLocation: inlineScript
+              workingDirectory: $(tfWorkingDir)
+              inlineScript: |
+                set -euo pipefail
+                terraform plan -out=tfplan
+
+          - publish: $(tfWorkingDir)/tfplan
+            artifact: prod-tfplan
+            displayName: Publish prod tfplan
+
+  - stage: ApplyProd
+    displayName: Apply prod infrastructure
+    dependsOn: PlanProd
+    variables:
+      - group: expenseflow-prod
+    jobs:
+      - deployment: ApplyProd
+        displayName: Terraform apply
+        environment: prod
+        timeoutInMinutes: 30
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - checkout: self
+                  fetchDepth: 0
+
+                - download: current
+                  artifact: prod-tfplan
+
+                - task: AzureCLI@2
+                  displayName: Write pipeline tfvars
+                  inputs:
+                    azureSubscription: $(azureServiceConnection)
+                    scriptType: bash
+                    scriptLocation: inlineScript
+                    workingDirectory: $(tfWorkingDir)
+                    inlineScript: |
+                      set -euo pipefail
+                      cat > pipeline.auto.tfvars <<EOF
+                      subscription_id               = "$(subscription_id)"
+                      tenant_id                     = "$(tenant_id)"
+                      key_vault_admin_object_ids    = ["$(key_vault_admin_object_id)"]
+                      postgres_admin_password       = "$(postgres_admin_password)"
+                      EOF
+
+                - task: AzureCLI@2
+                  displayName: Terraform apply
+                  inputs:
+                    azureSubscription: $(azureServiceConnection)
+                    scriptType: bash
+                    scriptLocation: inlineScript
+                    workingDirectory: $(tfWorkingDir)
+                    inlineScript: |
+                      set -euo pipefail
+                      cp "$(Pipeline.Workspace)/prod-tfplan/tfplan" ./tfplan
+                      terraform init -backend-config=backend.hcl -upgrade
+                      terraform apply -auto-approve tfplan

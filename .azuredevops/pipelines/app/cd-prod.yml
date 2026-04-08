@@ -1,0 +1,86 @@
+trigger: none
+
+pr: none
+
+parameters:
+  - name: imageTag
+    displayName: Image tag to deploy
+    type: string
+    default: latest
+
+variables:
+  - name: azureServiceConnection
+    value: sc-expenseflow-azure
+  - name: helmReleaseName
+    value: expenseflow-prod
+  - name: k8sNamespace
+    value: expenseflow-prod
+
+pool:
+  name: Default
+  demands:
+    - Agent.Name -equals devops-self-hosted-agent
+
+stages:
+  - stage: DeployProd
+    displayName: Deploy app to prod AKS
+    variables:
+      - group: expenseflow-app-prod
+    jobs:
+      - deployment: DeployProd
+        displayName: Helm deploy to prod
+        environment: prod
+        timeoutInMinutes: 15
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - checkout: self
+                  fetchDepth: 0
+
+                - task: AzureCLI@2
+                  displayName: Authenticate with prod AKS
+                  inputs:
+                    azureSubscription: $(azureServiceConnection)
+                    scriptType: bash
+                    scriptLocation: inlineScript
+                    inlineScript: |
+                      set -euo pipefail
+                      az aks get-credentials \
+                        --resource-group $(aks_resource_group) \
+                        --name $(aks_cluster_name) \
+                        --overwrite-existing
+
+                - task: AzureCLI@2
+                  displayName: Helm upgrade — prod
+                  inputs:
+                    azureSubscription: $(azureServiceConnection)
+                    scriptType: bash
+                    scriptLocation: inlineScript
+                    workingDirectory: $(Build.SourcesDirectory)
+                    inlineScript: |
+                      set -euo pipefail
+                      helm upgrade --install $(helmReleaseName) \
+                        expense-deploy/helm/expenseflow \
+                        --namespace $(k8sNamespace) \
+                        --create-namespace \
+                        -f expense-deploy/helm/expenseflow/values.yaml \
+                        -f expense-deploy/helm/expenseflow/values-prod.yaml \
+                        --set backend.image.tag=${{ parameters.imageTag }} \
+                        --set frontend.image.tag=${{ parameters.imageTag }} \
+                        --set-string backend.secretEnv.JWT_SECRET="$(jwt_secret)" \
+                        --set-string backend.secretEnv.DATABASE_URL="$(database_url)" \
+                        --set-string backend.secretEnv.REDIS_URL="$(redis_url)" \
+                        --set-string backend.secretEnv.AZURE_BLOB_CONNECTION_STRING="$(azure_blob_connection_string)"
+
+                - task: AzureCLI@2
+                  displayName: Verify rollout
+                  inputs:
+                    azureSubscription: $(azureServiceConnection)
+                    scriptType: bash
+                    scriptLocation: inlineScript
+                    inlineScript: |
+                      set -euo pipefail
+                      kubectl rollout status deployment \
+                        -n $(k8sNamespace) \
+                        --timeout=120s

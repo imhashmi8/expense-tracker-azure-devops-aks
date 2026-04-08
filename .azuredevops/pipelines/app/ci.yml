@@ -1,0 +1,138 @@
+trigger:
+  branches:
+    include:
+      - main
+  paths:
+    include:
+      - expense-app/*
+      - expense-app/**
+      - expense-deploy/*
+      - expense-deploy/**
+      - .azuredevops/pipelines/app/ci.yml
+
+pr:
+  branches:
+    include:
+      - main
+  paths:
+    include:
+      - expense-app/*
+      - expense-app/**
+      - expense-deploy/*
+      - expense-deploy/**
+      - .azuredevops/pipelines/app/ci.yml
+
+variables:
+  - name: azureServiceConnection
+    value: sc-expenseflow-azure
+  - name: imageTag
+    value: $(Build.BuildId)
+  - name: devAcrName
+    value: expenseflowdevacr
+  - name: prodAcrName
+    value: expenseflowprodacr
+
+pool:
+  name: Default
+  demands:
+    - Agent.Name -equals devops-self-hosted-agent
+
+stages:
+  - stage: Validate
+    displayName: Validate Helm chart
+    jobs:
+      - job: HelmLint
+        displayName: Lint Helm chart
+        timeoutInMinutes: 10
+        steps:
+          - checkout: self
+            fetchDepth: 0
+
+          - bash: helm lint expense-deploy/helm/expenseflow
+            displayName: Helm lint
+
+  - stage: BuildAndPush
+    displayName: Build and push app images
+    dependsOn: Validate
+    jobs:
+      - job: BuildBackend
+        displayName: Build backend image
+        timeoutInMinutes: 20
+        steps:
+          - checkout: self
+            fetchDepth: 0
+
+          - task: AzureCLI@2
+            displayName: Build backend → dev ACR
+            inputs:
+              azureSubscription: $(azureServiceConnection)
+              scriptType: bash
+              scriptLocation: inlineScript
+              inlineScript: |
+                set -euo pipefail
+                az acr build \
+                  --registry $(devAcrName) \
+                  --image expenseflow-backend:$(imageTag) \
+                  ./expense-app/backend
+
+          - task: AzureCLI@2
+            displayName: Build backend → prod ACR
+            inputs:
+              azureSubscription: $(azureServiceConnection)
+              scriptType: bash
+              scriptLocation: inlineScript
+              inlineScript: |
+                set -euo pipefail
+                az acr build \
+                  --registry $(prodAcrName) \
+                  --image expenseflow-backend:$(imageTag) \
+                  ./expense-app/backend
+
+      - job: BuildFrontend
+        displayName: Build frontend image
+        timeoutInMinutes: 20
+        steps:
+          - checkout: self
+            fetchDepth: 0
+
+          - task: AzureCLI@2
+            displayName: Build frontend → dev ACR
+            inputs:
+              azureSubscription: $(azureServiceConnection)
+              scriptType: bash
+              scriptLocation: inlineScript
+              inlineScript: |
+                set -euo pipefail
+                az acr build \
+                  --registry $(devAcrName) \
+                  --image expenseflow-frontend:$(imageTag) \
+                  ./expense-app/frontend
+
+          - task: AzureCLI@2
+            displayName: Build frontend → prod ACR
+            inputs:
+              azureSubscription: $(azureServiceConnection)
+              scriptType: bash
+              scriptLocation: inlineScript
+              inlineScript: |
+                set -euo pipefail
+                az acr build \
+                  --registry $(prodAcrName) \
+                  --image expenseflow-frontend:$(imageTag) \
+                  ./expense-app/frontend
+
+      - job: PublishTag
+        displayName: Publish image tag artifact
+        dependsOn:
+          - BuildBackend
+          - BuildFrontend
+        timeoutInMinutes: 5
+        steps:
+          - bash: |
+              mkdir -p $(Build.ArtifactStagingDirectory)
+              echo $(imageTag) > $(Build.ArtifactStagingDirectory)/image-tag.txt
+            displayName: Write image tag to file
+
+          - publish: $(Build.ArtifactStagingDirectory)/image-tag.txt
+            artifact: image-tag
+            displayName: Publish image tag artifact

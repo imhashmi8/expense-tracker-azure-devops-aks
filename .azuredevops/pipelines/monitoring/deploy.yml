@@ -1,0 +1,232 @@
+trigger:
+  branches:
+    include:
+      - main
+  paths:
+    include:
+      - expense-monitoring/*
+      - expense-monitoring/**
+      - .azuredevops/pipelines/monitoring/deploy.yml
+
+pr: none
+
+variables:
+  - name: azureServiceConnection
+    value: sc-expenseflow-azure
+  - name: monitoringNamespace
+    value: monitoring
+  - name: prometheusHelmRepo
+    value: https://prometheus-community.github.io/helm-charts
+  - name: prometheusReleaseName
+    value: kube-prometheus-stack
+
+pool:
+  name: Default
+  demands:
+    - Agent.Name -equals devops-self-hosted-agent
+
+stages:
+  - stage: DeployMonitoringDev
+    displayName: Deploy monitoring to dev AKS
+    variables:
+      - group: expenseflow-app-dev
+    jobs:
+      - deployment: DeployMonitoringDev
+        displayName: Deploy Prometheus stack + dashboards (dev)
+        environment: dev
+        timeoutInMinutes: 20
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - checkout: self
+                  fetchDepth: 0
+
+                - task: AzureCLI@2
+                  displayName: Authenticate with dev AKS
+                  inputs:
+                    azureSubscription: $(azureServiceConnection)
+                    scriptType: bash
+                    scriptLocation: inlineScript
+                    inlineScript: |
+                      set -euo pipefail
+                      az aks get-credentials \
+                        --resource-group $(aks_resource_group) \
+                        --name $(aks_cluster_name) \
+                        --overwrite-existing
+
+                - task: AzureCLI@2
+                  displayName: Add Prometheus Helm repo
+                  inputs:
+                    azureSubscription: $(azureServiceConnection)
+                    scriptType: bash
+                    scriptLocation: inlineScript
+                    inlineScript: |
+                      set -euo pipefail
+                      helm repo add prometheus-community $(prometheusHelmRepo)
+                      helm repo update
+
+                - task: AzureCLI@2
+                  displayName: Deploy kube-prometheus-stack
+                  inputs:
+                    azureSubscription: $(azureServiceConnection)
+                    scriptType: bash
+                    scriptLocation: inlineScript
+                    workingDirectory: $(Build.SourcesDirectory)
+                    inlineScript: |
+                      set -euo pipefail
+                      helm upgrade --install $(prometheusReleaseName) \
+                        prometheus-community/kube-prometheus-stack \
+                        --namespace $(monitoringNamespace) \
+                        --create-namespace \
+                        -f expense-monitoring/kube-prometheus-stack-values.yaml \
+                        --wait \
+                        --timeout 10m
+
+                - task: AzureCLI@2
+                  displayName: Apply ServiceMonitor
+                  inputs:
+                    azureSubscription: $(azureServiceConnection)
+                    scriptType: bash
+                    scriptLocation: inlineScript
+                    workingDirectory: $(Build.SourcesDirectory)
+                    inlineScript: |
+                      set -euo pipefail
+                      kubectl apply -f expense-monitoring/expense-app-servicemonitor.yaml
+
+                - task: AzureCLI@2
+                  displayName: Apply Grafana dashboard ConfigMap
+                  inputs:
+                    azureSubscription: $(azureServiceConnection)
+                    scriptType: bash
+                    scriptLocation: inlineScript
+                    workingDirectory: $(Build.SourcesDirectory)
+                    inlineScript: |
+                      set -euo pipefail
+                      kubectl apply -f expense-monitoring/grafana-dashboard-configmap.yaml
+
+                - task: AzureCLI@2
+                  displayName: Apply Grafana Ingress
+                  inputs:
+                    azureSubscription: $(azureServiceConnection)
+                    scriptType: bash
+                    scriptLocation: inlineScript
+                    workingDirectory: $(Build.SourcesDirectory)
+                    inlineScript: |
+                      set -euo pipefail
+                      kubectl apply -f expense-monitoring/grafana-ingress.yaml
+
+                - task: AzureCLI@2
+                  displayName: Verify monitoring pods are running
+                  inputs:
+                    azureSubscription: $(azureServiceConnection)
+                    scriptType: bash
+                    scriptLocation: inlineScript
+                    inlineScript: |
+                      set -euo pipefail
+                      kubectl rollout status deployment \
+                        -n $(monitoringNamespace) \
+                        --timeout=120s
+
+  - stage: DeployMonitoringProd
+    displayName: Deploy monitoring to prod AKS
+    dependsOn: DeployMonitoringDev
+    variables:
+      - group: expenseflow-app-prod
+    jobs:
+      - deployment: DeployMonitoringProd
+        displayName: Deploy Prometheus stack + dashboards (prod)
+        environment: prod
+        timeoutInMinutes: 20
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - checkout: self
+                  fetchDepth: 0
+
+                - task: AzureCLI@2
+                  displayName: Authenticate with prod AKS
+                  inputs:
+                    azureSubscription: $(azureServiceConnection)
+                    scriptType: bash
+                    scriptLocation: inlineScript
+                    inlineScript: |
+                      set -euo pipefail
+                      az aks get-credentials \
+                        --resource-group $(aks_resource_group) \
+                        --name $(aks_cluster_name) \
+                        --overwrite-existing
+
+                - task: AzureCLI@2
+                  displayName: Add Prometheus Helm repo
+                  inputs:
+                    azureSubscription: $(azureServiceConnection)
+                    scriptType: bash
+                    scriptLocation: inlineScript
+                    inlineScript: |
+                      set -euo pipefail
+                      helm repo add prometheus-community $(prometheusHelmRepo)
+                      helm repo update
+
+                - task: AzureCLI@2
+                  displayName: Deploy kube-prometheus-stack
+                  inputs:
+                    azureSubscription: $(azureServiceConnection)
+                    scriptType: bash
+                    scriptLocation: inlineScript
+                    workingDirectory: $(Build.SourcesDirectory)
+                    inlineScript: |
+                      set -euo pipefail
+                      helm upgrade --install $(prometheusReleaseName) \
+                        prometheus-community/kube-prometheus-stack \
+                        --namespace $(monitoringNamespace) \
+                        --create-namespace \
+                        -f expense-monitoring/kube-prometheus-stack-values.yaml \
+                        --wait \
+                        --timeout 10m
+
+                - task: AzureCLI@2
+                  displayName: Apply ServiceMonitor
+                  inputs:
+                    azureSubscription: $(azureServiceConnection)
+                    scriptType: bash
+                    scriptLocation: inlineScript
+                    workingDirectory: $(Build.SourcesDirectory)
+                    inlineScript: |
+                      set -euo pipefail
+                      kubectl apply -f expense-monitoring/expense-app-servicemonitor.yaml
+
+                - task: AzureCLI@2
+                  displayName: Apply Grafana dashboard ConfigMap
+                  inputs:
+                    azureSubscription: $(azureServiceConnection)
+                    scriptType: bash
+                    scriptLocation: inlineScript
+                    workingDirectory: $(Build.SourcesDirectory)
+                    inlineScript: |
+                      set -euo pipefail
+                      kubectl apply -f expense-monitoring/grafana-dashboard-configmap.yaml
+
+                - task: AzureCLI@2
+                  displayName: Apply Grafana Ingress
+                  inputs:
+                    azureSubscription: $(azureServiceConnection)
+                    scriptType: bash
+                    scriptLocation: inlineScript
+                    workingDirectory: $(Build.SourcesDirectory)
+                    inlineScript: |
+                      set -euo pipefail
+                      kubectl apply -f expense-monitoring/grafana-ingress.yaml
+
+                - task: AzureCLI@2
+                  displayName: Verify monitoring pods are running
+                  inputs:
+                    azureSubscription: $(azureServiceConnection)
+                    scriptType: bash
+                    scriptLocation: inlineScript
+                    inlineScript: |
+                      set -euo pipefail
+                      kubectl rollout status deployment \
+                        -n $(monitoringNamespace) \
+                        --timeout=120s

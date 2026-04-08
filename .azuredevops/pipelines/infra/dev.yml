@@ -8,7 +8,7 @@ trigger:
       - expense-infra/modules/**
       - expense-infra/envs/dev/*
       - expense-infra/envs/dev/**
-      - .azuredevops/pipelines/infra-dev.yml
+      - .azuredevops/pipelines/infra/dev.yml
 
 pr:
   branches:
@@ -20,11 +20,13 @@ pr:
       - expense-infra/modules/**
       - expense-infra/envs/dev/*
       - expense-infra/envs/dev/**
-      - .azuredevops/pipelines/infra-dev.yml
+      - .azuredevops/pipelines/infra/dev.yml
 
 variables:
   - name: azureServiceConnection
     value: sc-expenseflow-azure
+  - name: tfWorkingDir
+    value: $(Build.SourcesDirectory)/expense-infra/envs/dev
 
 pool:
   name: Default
@@ -38,34 +40,53 @@ stages:
       - group: expenseflow-dev
     jobs:
       - job: PlanDev
+        displayName: Terraform plan
+        timeoutInMinutes: 20
         steps:
           - checkout: self
             fetchDepth: 0
 
           - task: AzureCLI@2
-            displayName: Terraform dev plan
+            displayName: Write pipeline tfvars
             inputs:
               azureSubscription: $(azureServiceConnection)
               scriptType: bash
               scriptLocation: inlineScript
-              workingDirectory: $(Build.SourcesDirectory)/expense-infra/envs/dev
+              workingDirectory: $(tfWorkingDir)
               inlineScript: |
                 set -euo pipefail
-
-                terraform version
-
                 cat > pipeline.auto.tfvars <<EOF
-                subscription_id = "$(subscription_id)"
-                tenant_id = "$(tenant_id)"
-                key_vault_admin_object_ids = ["$(key_vault_admin_object_id)"]
-                postgres_admin_password = "$(postgres_admin_password)"
+                subscription_id               = "$(subscription_id)"
+                tenant_id                     = "$(tenant_id)"
+                key_vault_admin_object_ids    = ["$(key_vault_admin_object_id)"]
+                postgres_admin_password       = "$(postgres_admin_password)"
                 EOF
 
+          - task: AzureCLI@2
+            displayName: Terraform init and validate
+            inputs:
+              azureSubscription: $(azureServiceConnection)
+              scriptType: bash
+              scriptLocation: inlineScript
+              workingDirectory: $(tfWorkingDir)
+              inlineScript: |
+                set -euo pipefail
+                terraform version
                 terraform init -backend-config=backend.hcl -upgrade
                 terraform validate
+
+          - task: AzureCLI@2
+            displayName: Terraform plan
+            inputs:
+              azureSubscription: $(azureServiceConnection)
+              scriptType: bash
+              scriptLocation: inlineScript
+              workingDirectory: $(tfWorkingDir)
+              inlineScript: |
+                set -euo pipefail
                 terraform plan -out=tfplan
 
-          - publish: $(Build.SourcesDirectory)/expense-infra/envs/dev/tfplan
+          - publish: $(tfWorkingDir)/tfplan
             artifact: dev-tfplan
             displayName: Publish dev tfplan
 
@@ -76,8 +97,9 @@ stages:
       - group: expenseflow-dev
     jobs:
       - deployment: ApplyDev
-        displayName: Apply dev
+        displayName: Terraform apply
         environment: dev
+        timeoutInMinutes: 30
         strategy:
           runOnce:
             deploy:
@@ -89,24 +111,30 @@ stages:
                   artifact: dev-tfplan
 
                 - task: AzureCLI@2
-                  displayName: Terraform dev apply
+                  displayName: Write pipeline tfvars
                   inputs:
                     azureSubscription: $(azureServiceConnection)
                     scriptType: bash
                     scriptLocation: inlineScript
-                    workingDirectory: $(Build.SourcesDirectory)/expense-infra/envs/dev
+                    workingDirectory: $(tfWorkingDir)
                     inlineScript: |
                       set -euo pipefail
-
-                      terraform version
-
                       cat > pipeline.auto.tfvars <<EOF
-                      subscription_id = "$(subscription_id)"
-                      tenant_id = "$(tenant_id)"
-                      key_vault_admin_object_ids = ["$(key_vault_admin_object_id)"]
-                      postgres_admin_password = "$(postgres_admin_password)"
+                      subscription_id               = "$(subscription_id)"
+                      tenant_id                     = "$(tenant_id)"
+                      key_vault_admin_object_ids    = ["$(key_vault_admin_object_id)"]
+                      postgres_admin_password       = "$(postgres_admin_password)"
                       EOF
 
+                - task: AzureCLI@2
+                  displayName: Terraform apply
+                  inputs:
+                    azureSubscription: $(azureServiceConnection)
+                    scriptType: bash
+                    scriptLocation: inlineScript
+                    workingDirectory: $(tfWorkingDir)
+                    inlineScript: |
+                      set -euo pipefail
                       cp "$(Pipeline.Workspace)/dev-tfplan/tfplan" ./tfplan
                       terraform init -backend-config=backend.hcl -upgrade
                       terraform apply -auto-approve tfplan
