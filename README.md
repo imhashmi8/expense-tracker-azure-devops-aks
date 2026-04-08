@@ -1,6 +1,6 @@
 # ExpenseFlow — Azure DevOps + AKS End-to-End Project
 
-A production-grade expense management platform built to demonstrate a full DevOps lifecycle on Azure — from infrastructure provisioning with Terraform to containerised application deployment on AKS, complete with CI/CD pipelines and Prometheus/Grafana observability.
+A production-grade expense management platform built to demonstrate a full DevOps lifecycle on Azure, infrastructure provisioning with Terraform to containerised application deployment on AKS, complete with CI/CD pipelines and Prometheus/Grafana observability.
 
 ---
 
@@ -45,7 +45,7 @@ The project is intentionally designed to mirror real-world enterprise setups: se
               │                                                     │
               │   ACR (dev)          ACR (prod)                     │
               │      │                   │                          │
-              │   ┌──▼───────────────────▼──┐                      │
+              │   ┌──▼───────────────────▼──┐                       │
               │   │     AKS Cluster (dev/prod)                      │
               │   │  ┌────────────────────┐  │                      │
               │   │  │  expenseflow-dev/  │  │                      │
@@ -61,18 +61,18 @@ The project is intentionally designed to mirror real-world enterprise setups: se
               │   │  │  └──────┬───────┘  │  │                      │
               │   │  └─────────┼──────────┘  │                      │
               │   └───────────┬┼─────────────┘                      │
-              │               ││                                     │
+              │               ││                                    │
               │    ┌──────────┘└────────────┐                       │
-              │    │                        │                        │
-              │  PostgreSQL            Azure Cache                   │
-              │  Flexible Server       for Redis                     │
-              │  (private subnet)                                    │
-              │                                                      │
-              │  Azure Blob Storage    Azure Key Vault               │
-              │  (receipt uploads)     (secrets)                     │
-              │                                                      │
-              │  Log Analytics         Prometheus + Grafana          │
-              │  Workspace             (kube-prometheus-stack)       │
+              │    │                        │                       │
+              │  PostgreSQL            Azure Cache                  │
+              │  Flexible Server       for Redis                    │
+              │  (private subnet)                                   │
+              │                                                     │
+              │  Azure Blob Storage    Azure Key Vault              │
+              │  (receipt uploads)     (secrets)                    │
+              │                                                     │
+              │  Log Analytics         Prometheus + Grafana         │
+              │  Workspace             (kube-prometheus-stack)      │
               └─────────────────────────────────────────────────────┘
 ```
 
